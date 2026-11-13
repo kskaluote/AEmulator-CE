@@ -20,7 +20,18 @@ private val ALWAYS_RESTART = setOf("mediaserver", "installd", "netd", "keystore"
 /** Native arm64 engine: vendor daemons that only poll hardware the phone does not have (modem, DSP, TrustZone). */
 private val N64_SKIP = setOf("audiod", "ATFWD-daemon", "imsqmidaemon", "loc_launcher", "cnd", "dpmd", "cnss-daemon",
     "tftp_server", "qcom-system-daemon", "hvdcp_opti", "pm-service", "mtd", "mlipayd", "vsimd", "fdpp", "perfd", "ipacm",
-    "qti", "netmgrd", "port-bridge", "ims_rtp_daemon", "imsdatadaemon", "wcnss_service", "msm_irqbalance", "energy-awareness", "sscrpcd", "adsprpcd", "cdsprpcd", "audioadsprpcd")
+    "qti", "netmgrd", "port-bridge", "ims_rtp_daemon", "imsdatadaemon", "wcnss_service", "msm_irqbalance", "energy-awareness", "sscrpcd", "adsprpcd", "cdsprpcd", "audioadsprpcd",
+    // Lenovo TB375FC / ZUI 16 (Android 14): these three crash-loop every few seconds in CE
+    // (host.log: vendor.mot.input-hal-1-1 code 0 restarting 1/12, 2/12...; vendor.sensors-hal-multihal
+    // code 134; dms-hal-2-0 code 1) and each restart blocks system_server / InputDispatcher, so
+    // touches are cancelled after 5s (PointerEventDispatcher0 unresponsive) and system_server ANRs.
+    // CE already supplies its own input via /dev/input/event0 and its own sensor stubs, so do not
+    // start the vendor ones at all instead of letting them crash-loop.
+    "vendor.mot.input-hal-1-1", "vendor.sensors-hal-multihal", "dms-hal-2-0",
+    // Lenovo factory HAL: linker cannot locate _ZN7android8hardware7details17gBnConstructorMapE
+    // in android.hardware.light@2.0.so, so interfaces.factoryInterface@1.0-service exits code 1 on
+    // every start and com.factory.mmigroup then crashes with hwFactoryInterface is null.
+    "interfaces.factoryInterface@1.0-service")
 
 /**
  * Одна запущенная виртуальная машина. Живёт в процессе :vm (одна на процесс: GL-мост нельзя
@@ -524,8 +535,16 @@ class GuestVm(val ctx: Context, val img: GuestImage) {
             }
         }
         if (engine == Engine.N64 && kernel.oneFingerprint) runCatching {
-            PropArea.parseProps(File(paths.root, "system/build.prop").readText())["ro.system.build.fingerprint"]?.let { fp ->
-                overrides["ro.vendor.build.fingerprint"] = fp; overrides["ro.bootimage.build.fingerprint"] = fp
+            // TB375FC / ZUI 16: system/build.prop carries ro.build.fingerprint, not
+            // ro.system.build.fingerprint, so the original lookup found nothing, the
+            // vendor fingerprint stayed different, and system_server showed
+            // "There's an internal problem with your device" at every boot.
+            // Fall back to ro.build.fingerprint, then to ro.system.build.fingerprint.
+            val sysProps = PropArea.parseProps(File(paths.root, "system/build.prop").readText())
+            val fp = sysProps["ro.system.build.fingerprint"] ?: sysProps["ro.build.fingerprint"]
+            fp?.let {
+                overrides["ro.vendor.build.fingerprint"] = it; overrides["ro.bootimage.build.fingerprint"] = it
+                overrides["ro.system.build.fingerprint"] = it
             }
         }
         /*
@@ -839,7 +858,7 @@ class GuestVm(val ctx: Context, val img: GuestImage) {
             log("· ${svc.name}: ${svc.argv.first()} missing, skipping")
             return
         }
-        if (engine == Engine.N64 && ((svc.name == "zygote_secondary" && !n64Has32) || svc.argv.first().substringAfterLast('/') in N64_SKIP)) return
+        if (engine == Engine.N64 && ((svc.name == "zygote_secondary" && !n64Has32) || svc.argv.first().substringAfterLast('/') in N64_SKIP || svc.name in N64_SKIP)) return
         if (engine == Engine.N64 && !paths.nativeBin("libqemu_arm.so").canExecute() && !runsNatively(File(paths.root, svc.argv.first().removePrefix("/")))) {
             log("· ${svc.name}: 32-bit program, skipped by the native arm64 engine")
             return

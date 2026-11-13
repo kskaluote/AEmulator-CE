@@ -2183,10 +2183,15 @@ class TreeFixer(
 
     companion object {
         private const val OPEN_GL = "engines/kk/libGLES_aemu.so"
-        /** Мастера первого запуска: Samsung, Google, AOSP, MIUI, HTC, Sony */
+        /** Мастера первого запуска: Samsung, Google, AOSP, MIUI, HTC, Sony, Lenovo ZUI */
         val SETUP_WIZARDS = listOf(
             "com.sec.android.app.SecSetupWizard", "com.google.android.setupwizard", "com.android.provision",
             "com.miui.provision", "com.htc.setupwizard", "com.sonyericsson.setupwizard", "com.sonymobile.setupwizard",
+            // Lenovo ZUI (TB375FC / Xiaoxin Pad Pro 12.7, Android 14): com.zui.setupwizard takes over the
+            // screen at first boot, runs portrait inside a 1280x720 landscape guest display, and its
+            // touches are cancelled by the unresponsive PointerEventDispatcher0 monitor, so it can never
+            // be passed here. Disable it like the other vendor wizards above.
+            "com.zui.setupwizard",
             // вход в Google-аккаунт на 2.x–4.x больше не работает (старые протоколы входа Google закрыл):
             // его экран не рисуется, запрещает «Домой», и «Контакты» при первом запуске запирают в нём систему
             "com.google.android.gsf.login",
@@ -2198,7 +2203,8 @@ class TreeFixer(
         )
         /** the entries of [SETUP_WIZARDS] that take over the screen at first boot (the AOSP provisioner finishes by itself) */
         val FIRST_RUN_WIZARDS = listOf("com.sec.android.app.SecSetupWizard", "com.google.android.setupwizard", "com.miui.provision",
-            "com.htc.setupwizard", "com.sonyericsson.setupwizard", "com.sonymobile.setupwizard", "com.android.setupwizard")
+            "com.htc.setupwizard", "com.sonyericsson.setupwizard", "com.sonymobile.setupwizard", "com.android.setupwizard",
+            "com.zui.setupwizard")
         /** Прошивка MediaTek, где AudioFlinger связан с собственной звуковой библиотекой MTK (/dev/eac). */
         fun isMtkAudio(root: File): Boolean {
             if (File(root, "system/lib/libaudio.mtk.so").isFile) return true   // already swapped for our HAL

@@ -434,6 +434,10 @@ class Importer(
 
     /** 7z: entries are read in order (solid archives cannot seek); interesting ones are unpacked like their zip twins */
     private fun importSevenZ(ch: FileChannel, name: String, depth: Int) {
+        // handle() probed the first 1100 bytes via the shared channel and left its position at 1100;
+        // SevenZFile reads the signature from the current position, so a valid archive would fail
+        // with "Bad 7z signature" unless we rewind first (fix ported from AEmulator-Plus).
+        ch.position(0)
         SevenZFile.builder().setSeekableByteChannel(ch).get().use { z ->
             val nested = ArrayList<Pair<File, String>>()
             // (a block OTA keeps its data and its transfer.list as separate entries: both have to be in the same
