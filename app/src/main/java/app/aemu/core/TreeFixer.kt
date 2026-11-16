@@ -1422,6 +1422,11 @@ class TreeFixer(
                     val out = java.nio.ByteBuffer.allocate(12).order(java.nio.ByteOrder.LITTLE_ENDIAN)
                     note.forEach { out.putInt(it) }
                     File(tmp, "map_${o.name.removeSuffix(".bpf")}_$name").writeBytes(out.array())
+                    // (17: the translator looks a pinned map up by its pin name only, as the
+                    // .android_maps branch already writes it, so a libbpf (.bpf) map needs the
+                    // bare name too, or netd's BpfMapRO aborts on a key/value size mismatch
+                    // against a missing note; keep the prefixed name as well)
+                    File(tmp, name).writeBytes(out.array())
                     n++
                 }
                 return@runCatching
